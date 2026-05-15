@@ -99,12 +99,18 @@ variables = {
     "$_OS": "WINDOWS",
     "WINDOWS": "WINDOWS", "MACOS": "MACOS", "LINUX": "LINUX", "CHROMEOS": "CHROMEOS",
     "$_RECEIVED_HOST_LOCK_LED_REPLY": True,
-    "$_HOST_CONFIGURATION_REQUEST_COUNT": 0
+    "$_HOST_CONFIGURATION_REQUEST_COUNT": 0,
+    "$_CURRENT_VID": "0000",
+    "$_CURRENT_PID": "0000",
+    "$_CURRENT_ATTACKMODE": 1
 }
 internalVariables = {"$_CAPSLOCK_ON": _capsOn, "$_NUMLOCK_ON": _numOn, "$_SCROLLLOCK_ON": _scrollOn}
 defines = {}
 functions = {}
 extensions = {}
+
+last_attackmode_string = ""
+saved_attackmode_state = {}
 
 letters = "abcdefghijklmnopqrstuvwxyz"
 numbers = "0123456789"
@@ -289,7 +295,7 @@ def replaceDefines(line):
     return line
 
 async def parseLine(line, script_lines):
-    global defaultDelay, variables, functions, extensions, defines
+    global defaultDelay, variables, functions, extensions, defines, last_attackmode_string, saved_attackmode_state
     line = line.strip()
 
     # DuckyScript 3.0 dynamic variable handling for inline occurrences
@@ -334,10 +340,85 @@ async def parseLine(line, script_lines):
         print("[SCRIPT]: HIDE_PAYLOAD executed")
     elif line == "RESTORE_PAYLOAD":
         print("[SCRIPT]: RESTORE_PAYLOAD executed")
+    elif line.startswith("SAVE_ATTACKMODE"):
+        saved_attackmode_state["VID"] = variables.get("$_CURRENT_VID", "0000")
+        saved_attackmode_state["PID"] = variables.get("$_CURRENT_PID", "0000")
+        saved_attackmode_state["MODE"] = variables.get("$_CURRENT_ATTACKMODE", 1)
+        saved_attackmode_state["FULL_CMD"] = last_attackmode_string
+        print("[SCRIPT]: ATTACKMODE state saved.")
+    elif line.startswith("RESTORE_ATTACKMODE"):
+        if "MODE" in saved_attackmode_state:
+            variables["$_CURRENT_VID"] = saved_attackmode_state["VID"]
+            variables["$_CURRENT_PID"] = saved_attackmode_state["PID"]
+            variables["$_CURRENT_ATTACKMODE"] = saved_attackmode_state["MODE"]
+            last_attackmode_string = saved_attackmode_state["FULL_CMD"]
+            try:
+                with open("attackmode_state.txt", "w") as f:
+                    f.write(last_attackmode_string)
+            except OSError:
+                pass
+            print("[SCRIPT]: ATTACKMODE state restored.")
+    elif line.startswith("ATTACKMODE"):
+        cmd_string = line.strip()
+        if cmd_string == last_attackmode_string:
+            print("[SCRIPT]: Redundant ATTACKMODE ignored.")
+        else:
+            last_attackmode_string = cmd_string
+            parts = cmd_string.split()
+            mode_val = 0
+            has_hid = False
+            has_storage = False
+
+            vid = variables.get("$_CURRENT_VID", "0000")
+            pid = variables.get("$_CURRENT_PID", "0000")
+            man = ""
+            prod = ""
+            serial = ""
+
+            for p in parts[1:]:
+                p_upper = p.upper()
+                if p_upper == "HID":
+                    has_hid = True
+                elif p_upper == "STORAGE":
+                    has_storage = True
+                elif p_upper == "OFF":
+                    has_hid = False
+                    has_storage = False
+                elif p_upper.startswith("VID="):
+                    vid = p_upper[4:]
+                elif p_upper.startswith("PID="):
+                    pid = p_upper[4:]
+                elif p_upper.startswith("MAN="):
+                    man = p[4:]
+                elif p_upper.startswith("PROD="):
+                    prod = p[5:]
+                elif p_upper.startswith("SERIAL="):
+                    serial = p[7:]
+                elif p_upper == "SERIAL_RANDOM":
+                    serial = ''.join(random.choice("0123456789ABCDEF") for _ in range(12))
+
+            if has_hid and has_storage:
+                mode_val = 3
+            elif has_storage:
+                mode_val = 2
+            elif has_hid:
+                mode_val = 1
+            else:
+                mode_val = 0
+
+            variables["$_CURRENT_ATTACKMODE"] = mode_val
+            variables["$_CURRENT_VID"] = vid
+            variables["$_CURRENT_PID"] = pid
+
+            try:
+                with open("attackmode_state.txt", "w") as f:
+                    f.write(f"MODE={mode_val},VID={vid},PID={pid},MAN={man},PROD={prod},SERIAL={serial}")
+            except OSError as e:
+                print("[SCRIPT]: Failed to save ATTACKMODE state:", e)
+
+            print(f"[SCRIPT]: ATTACKMODE updated to {mode_val} (VID:{vid} PID:{pid})")
     elif line.startswith("VERSION"):
         pass # DS3 Extensions define Version, skipped at runtime
-    elif line.startswith("ATTACKMODE"):
-        pass # Ignored dynamically; usually handled in boot.py for pico-ducky
     elif line == "SAVE_HOST_KEYBOARD_STATE":
         SaveKeyboardLedState()
     elif line.startswith("HOLD"):
