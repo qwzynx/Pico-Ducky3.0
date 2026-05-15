@@ -470,12 +470,12 @@ async def parseLine(line, script_lines):
     elif(line.startswith("IMPORT_EXTENSION")):
         ext_filename = line.split()[1]
         try:
-            with open(ext_filename, "r", encoding="utf-8") as ext_f:
+            with open(f"extensions/{ext_filename}", "r", encoding="utf-8") as ext_f:
                 ext_lines = iter(ext_f.readlines())
                 for ext_line in ext_lines:
                     await parseLine(ext_line, ext_lines)
         except OSError:
-            print(f"[ERROR] Could not load extension: {ext_filename}")
+            print(f"[ERROR] Could not load extension: extensions/{ext_filename}")
     elif(line[0:13] == "DEFAULT_DELAY"):
         defaultDelay = int(line[14:]) * 10
     elif(line[0:12] == "DEFAULTDELAY"):
@@ -580,15 +580,15 @@ async def parseLine(line, script_lines):
         if ext_name not in extensions:
             extensions[ext_name] = "LOADING" # Mark as loading to prevent recursive reads
 
-            # Build potential file paths to look for on the Pico's root
+            # Build potential file paths to look for in the extensions folder
             file_candidates = [
-                f"{ext_name}.dd", f"{ext_name}.txt",
-                f"{ext_name.lower()}.dd", f"{ext_name.lower()}.txt"
+                f"extensions/{ext_name}.dd", f"extensions/{ext_name}.txt",
+                f"extensions/{ext_name.lower()}.dd", f"extensions/{ext_name.lower()}.txt"
             ]
 
             # Special case to look for os_detect.dd/txt as requested
             if ext_name == "OS_DETECTION":
-                file_candidates = ["os_detect.dd", "os_detect.txt"] + file_candidates
+                file_candidates = ["extensions/os_detect.dd", "extensions/os_detect.txt"] + file_candidates
 
             # Try loading from files dynamically first
             for fname in file_candidates:
