@@ -8,6 +8,7 @@
 import re
 import time
 import random
+import os
 import digitalio
 from digitalio import DigitalInOut, Pull
 from adafruit_debouncer import Debouncer
@@ -295,7 +296,7 @@ def replaceDefines(line):
     return line
 
 async def parseLine(line, script_lines):
-    global defaultDelay, variables, functions, extensions, defines, last_attackmode_string, saved_attackmode_state
+    global defaultDelay, variables, functions, extensions, defines, last_attackmode_string, saved_attackmode_state, current_payload_file
     line = line.strip()
 
     # DuckyScript 3.0 dynamic variable handling for inline occurrences
@@ -338,8 +339,24 @@ async def parseLine(line, script_lines):
         raise ReturnException()
     elif line == "HIDE_PAYLOAD":
         print("[SCRIPT]: HIDE_PAYLOAD executed")
+        try:
+            root_files = os.listdir('/')
+            if current_payload_file in root_files:
+                os.rename(current_payload_file, f".{current_payload_file}")
+            if "seed.bin" in root_files:
+                os.rename("seed.bin", ".seed.bin")
+        except OSError as e:
+            print(f"[SCRIPT]: HIDE_PAYLOAD error: {e}")
     elif line == "RESTORE_PAYLOAD":
         print("[SCRIPT]: RESTORE_PAYLOAD executed")
+        try:
+            root_files = os.listdir('/')
+            if f".{current_payload_file}" in root_files:
+                os.rename(f".{current_payload_file}", current_payload_file)
+            if ".seed.bin" in root_files:
+                os.rename(".seed.bin", "seed.bin")
+        except OSError as e:
+            print(f"[SCRIPT]: RESTORE_PAYLOAD error: {e}")
     elif line.startswith("SAVE_ATTACKMODE"):
         saved_attackmode_state["VID"] = variables.get("$_CURRENT_VID", "0000")
         saved_attackmode_state["PID"] = variables.get("$_CURRENT_PID", "0000")
@@ -758,38 +775,43 @@ def getProgrammingStatus():
     return(progStatus)
 
 defaultDelay = 0
+current_payload_file = "payload.dd"
 
 async def runScript(file):
-    global defaultDelay
+    global defaultDelay, current_payload_file
 
     duckyScriptPath = file
+    current_payload_file = file
     restart = True
     try:
         while restart:
             restart = False
+            # Read everything first and close the file to avoid file lock issues when HIDE_PAYLOAD triggers os.rename
             with open(duckyScriptPath, "r", encoding='utf-8') as f:
-                script_lines = iter(f.readlines())
-                previousLine = ""
-                try:
-                    for line in script_lines:
-                        print(f"runScript: {line}")
-                        if(line[0:6] == "REPEAT"):
-                            for i in range(int(line[7:])):
-                                await parseLine(previousLine, script_lines)
-                                await asyncio.sleep(float(defaultDelay) / 1000)
-                        elif line.startswith("RESTART_PAYLOAD"):
-                            restart = True
-                            break
-                        elif line.startswith("STOP_PAYLOAD"):
-                            restart = False
-                            break
-                        else:
-                            await parseLine(line, script_lines)
-                            previousLine = line
-                        await asyncio.sleep(float(defaultDelay) / 1000)
-                except ReturnException:
-                    print("Script executed RETURN")
-                    restart = False
+                lines = f.readlines()
+                
+            script_lines = iter(lines)
+            previousLine = ""
+            try:
+                for line in script_lines:
+                    print(f"runScript: {line}")
+                    if(line[0:6] == "REPEAT"):
+                        for i in range(int(line[7:])):
+                            await parseLine(previousLine, script_lines)
+                            await asyncio.sleep(float(defaultDelay) / 1000)
+                    elif line.startswith("RESTART_PAYLOAD"):
+                        restart = True
+                        break
+                    elif line.startswith("STOP_PAYLOAD"):
+                        restart = False
+                        break
+                    else:
+                        await parseLine(line, script_lines)
+                        previousLine = line
+                    await asyncio.sleep(float(defaultDelay) / 1000)
+            except ReturnException:
+                print("Script executed RETURN")
+                restart = False
     except OSError as e:
         print("Unable to open file", file)
 
