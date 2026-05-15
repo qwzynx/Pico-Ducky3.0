@@ -509,9 +509,7 @@ async def parseLine(line, script_lines):
             if ext_name == "OS_DETECTION":
                 file_candidates = ["os_detect.dd", "os_detect.txt"] + file_candidates
 
-            loaded_from_file = False
-
-            # Try loading from files dynamically
+            # Try loading from files dynamically first
             for fname in file_candidates:
                 try:
                     with open(fname, "r", encoding="utf-8") as ext_f:
@@ -519,25 +517,22 @@ async def parseLine(line, script_lines):
                         extIter = iter(ext_lines_list)
                         for extLine in extIter:
                             await parseLine(extLine, extIter)
-                    extensions[ext_name] = True
-                    loaded_from_file = True
                     print(f"[SCRIPT]: Extension {ext_name} auto-loaded from {fname}")
                     break
                 except OSError:
                     continue
 
-            # Execute standard inline block parsing if external file not found
-            if not loaded_from_file:
-                extensions[ext_name] = ext_code
+            # Mark as fully loaded before running the inline block
+            extensions[ext_name] = True
 
-                # Execute the extension block immediately (inline execution)
-                extIter = iter(deepcopy(ext_code))
-                for extLine in extIter:
-                    await parseLine(extLine, extIter)
+            # Execute the inline extension block immediately 
+            extIter = iter(deepcopy(ext_code))
+            for extLine in extIter:
+                await parseLine(extLine, extIter)
 
         elif extensions[ext_name] == "LOADING":
             # The extension file being loaded contained its own EXTENSION block. We execute the inner code now.
-            extensions[ext_name] = ext_code
+            extensions[ext_name] = True
             extIter = iter(deepcopy(ext_code))
             for extLine in extIter:
                 await parseLine(extLine, extIter)
